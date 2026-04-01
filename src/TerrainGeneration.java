@@ -106,13 +106,14 @@ public class TerrainGeneration { //ST
             GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);
             GL11.glLoadIdentity();
 
-            // ST: steep top-down-ish angle so bullets are clearly visible falling in
+            // ST: flat horizontal view — camera sits at terrain level looking straight
+            // at the terrain face-on; bullets fall from above into the scene
             float centerX = terrain.getCenterX();
-            float centerZ = terrain.getCenterY(); // getCenterY() returns Z midpoint
             float maxDim  = terrain.getMaxDimension();
 
-            GL11.glRotatef(55, 1, 0, 0);                                          // steep downward tilt
-            GL11.glTranslatef(-centerX, -maxDim * 0.6f, -centerZ - maxDim * 0.7f);
+            // no X rotation = perfectly level camera
+            // pull back far enough to see the full terrain width, sit at mid-height
+            GL11.glTranslatef(-centerX, -maxDim * 0.15f, -maxDim * 1.4f);
 
             terrain.render(); //ST
 
