@@ -91,7 +91,8 @@ public class TerrainGeneration { //ST
         // ST: init bullet system using terrain bounds so bullets spawn above the terrain
         bulletSystem = new BulletSystem(
                 terrain.getMinX(), terrain.getMaxX(),
-                terrain.getMinZ(), terrain.getMaxZ()
+                terrain.getMinZ(), terrain.getMaxZ(),
+                terrain // NEW: pass terrain so bullets can query height
         );
     }
 
@@ -148,6 +149,13 @@ class BulletSystem {
     private static final float SMALL_SCALE = 1.8f;
     private static final float LARGE_SCALE = 3.2f;
 
+    // NEW: physics constants for bounce behaviour
+    private static final float GRAVITY         = 25.0f;  // NEW: downward acceleration (units/s^2)
+    private static final float BOUNCE_DAMPEN   = 0.45f;  // NEW: fraction of vertical speed kept after bounce (0=dead, 1=perfect)
+    private static final float LATERAL_DAMPEN  = 0.75f;  // NEW: fraction of horizontal speed kept after bounce
+    private static final float MIN_BOUNCE_SPD  = 1.5f;   // NEW: if bounce speed falls below this, bullet comes to rest
+    private static final float MAX_BOUNCES     = 5;      // NEW: maximum number of bounces before bullet dies
+
     private final List<Bullet> bullets = new ArrayList<>();
     private final Random rng = new Random();
     private float spawnAccumulator = 0.0f;
@@ -159,9 +167,12 @@ class BulletSystem {
     private final int smallTexture;
     private final int largeTexture;
 
-    public BulletSystem(float minX, float maxX, float minZ, float maxZ) {
+    private final Terrain terrain; // NEW: reference to terrain for height sampling
+
+    public BulletSystem(float minX, float maxX, float minZ, float maxZ, Terrain terrain) { // NEW: terrain param added
         this.minX = minX; this.maxX = maxX;
         this.minZ = minZ; this.maxZ = maxZ;
+        this.terrain = terrain; // NEW
 
         smallMesh    = new OBJMesh("small_bullet.obj");
         largeMesh    = new OBJMesh("large_bullet.obj");
@@ -176,9 +187,53 @@ class BulletSystem {
             spawnBullet();
         }
 
+        // NEW: replaced simple fall with physics update including bounce detection
         bullets.removeIf(b -> {
-            b.y -= FALL_SPEED * dt;
-            return b.y < KILL_Y;
+            if (b.resting) return false; // NEW: skip physics for resting bullets, keep them alive to show
+
+            // NEW: apply gravity to vertical velocity
+            b.vy -= GRAVITY * dt;
+
+            // NEW: update position using velocity
+            b.x += b.vx * dt;
+            b.y += b.vy * dt;
+            b.z += b.vz * dt;
+
+            // NEW: clamp x/z inside terrain bounds so we can always sample height
+            float cx = Math.max(minX, Math.min(maxX, b.x));
+            float cz = Math.max(minZ, Math.min(maxZ, b.z));
+
+            // NEW: sample terrain height and surface normal at bullet's position
+            float terrainY  = terrain.getHeightAt(cx, cz);
+            float[] normal  = terrain.getNormalAt(cx, cz); // NEW: slope-aware normal
+
+            // NEW: bounce when bullet reaches or passes through the terrain surface
+            if (b.y <= terrainY) {
+                b.y = terrainY; // NEW: push bullet back to surface
+                b.bounceCount++;
+
+                // NEW: reflect velocity off the terrain surface normal
+                // reflection formula: v' = v - 2*(v dot n)*n
+                float dot = b.vx * normal[0] + b.vy * normal[1] + b.vz * normal[2];
+                float rx  = b.vx - 2 * dot * normal[0];
+                float ry  = b.vy - 2 * dot * normal[1];
+                float rz  = b.vz - 2 * dot * normal[2];
+
+                // NEW: apply damping — less energy after each bounce
+                b.vx = rx * LATERAL_DAMPEN;
+                b.vy = ry * BOUNCE_DAMPEN;
+                b.vz = rz * LATERAL_DAMPEN;
+
+                // NEW: if bounce is too weak or too many bounces, come to rest
+                float speed = (float) Math.sqrt(b.vx * b.vx + b.vy * b.vy + b.vz * b.vz);
+                if (speed < MIN_BOUNCE_SPD || b.bounceCount >= MAX_BOUNCES) {
+                    b.resting = true;
+                    b.vx = 0; b.vy = 0; b.vz = 0;
+                }
+            }
+
+            // NEW: remove bullet if it drifts far outside the scene or falls through (failsafe)
+            return b.y < KILL_Y && !b.resting;
         });
     }
 
@@ -186,7 +241,12 @@ class BulletSystem {
         float x = minX + rng.nextFloat() * (maxX - minX);
         float z = minZ + rng.nextFloat() * (maxZ - minZ);
         boolean large = rng.nextBoolean();
-        bullets.add(new Bullet(x, SPAWN_HEIGHT, z, large));
+
+        // NEW: give each bullet a small random horizontal drift so bounces spread naturally
+        float vx = (rng.nextFloat() - 0.5f) * 4.0f; // NEW
+        float vz = (rng.nextFloat() - 0.5f) * 4.0f; // NEW
+
+        bullets.add(new Bullet(x, SPAWN_HEIGHT, z, large, vx, -FALL_SPEED, vz)); // NEW: initial velocity
     }
 
     public void render() {
@@ -194,8 +254,21 @@ class BulletSystem {
             GL11.glPushMatrix();
 
             GL11.glTranslatef(b.x, b.y, b.z);
-            // ST: rotate so bullet points nose-down (falling posture)
-            GL11.glRotatef(180, 1, 0, 0);
+
+            // NEW: tilt bullet to match velocity direction while it's moving; lay flat when resting
+            if (!b.resting) {
+                float speed = (float) Math.sqrt(b.vx * b.vx + b.vy * b.vy + b.vz * b.vz);
+                if (speed > 0.01f) {
+                    // NEW: point the bullet nose along its velocity vector
+                    float pitch = (float) Math.toDegrees(Math.asin(-b.vy / speed));
+                    float yaw   = (float) Math.toDegrees(Math.atan2(b.vx, b.vz));
+                    GL11.glRotatef(yaw,   0, 1, 0); // NEW: horizontal heading
+                    GL11.glRotatef(pitch, 1, 0, 0); // NEW: nose-down angle
+                }
+            } else {
+                // ST: rotate so bullet points nose-down (falling posture)
+                GL11.glRotatef(180, 1, 0, 0);
+            }
 
             if (b.large) {
                 GL11.glScalef(LARGE_SCALE, LARGE_SCALE, LARGE_SCALE);
@@ -213,9 +286,18 @@ class BulletSystem {
 
     private static class Bullet {
         float x, y, z;
+        float vx, vy, vz; // NEW: velocity components
         boolean large;
-        Bullet(float x, float y, float z, boolean large) {
-            this.x = x; this.y = y; this.z = z; this.large = large;
+        boolean resting;  // NEW: true once bullet has come to rest on terrain
+        int bounceCount;  // NEW: tracks how many times the bullet has bounced
+
+        // NEW: updated constructor to accept initial velocity
+        Bullet(float x, float y, float z, boolean large, float vx, float vy, float vz) {
+            this.x = x; this.y = y; this.z = z;
+            this.large = large;
+            this.vx = vx; this.vy = vy; this.vz = vz;
+            this.resting = false; // NEW
+            this.bounceCount = 0; // NEW
         }
     }
 }
@@ -290,6 +372,11 @@ class OBJMesh {
         }
         GL11.glEnd();
     }
+
+    // NEW: expose vertex and normal data so Terrain can build a height/normal lookup
+    public List<float[]> getVertices() { return vertices; } // NEW
+    public List<float[]> getNormals()  { return normals;  } // NEW
+    public List<int[]>   getFaces()    { return faces;    } // NEW
 }
 
 // ST: static texture loader — RGBA so alpha channels work
@@ -334,11 +421,142 @@ class Terrain {
     private float minX = Float.MAX_VALUE,  maxX = -Float.MAX_VALUE;
     private float minZ = Float.MAX_VALUE,  maxZ = -Float.MAX_VALUE;
 
+    // NEW: heightmap and normal map arrays for fast bullet collision sampling
+    private int   gridW, gridH;           // NEW: grid dimensions (256x256 for fractal_terrain)
+    private float[] heightGrid;           // NEW: [gridW * gridH] sampled heights
+    private float[][] normalGrid;         // NEW: [gridW * gridH][3] sampled normals
+
     public Terrain(String objPath, String texturePath) {
         mesh = new OBJMesh(objPath);
         parseBounds(objPath);
         textureId = TextureLoader.load(texturePath);
+        buildHeightGrid(); // NEW: build lookup table after mesh is loaded
     }
+
+    // NEW: walks vertices to populate a fast height + normal lookup grid
+    private void buildHeightGrid() {
+        // NEW: the fractal_terrain OBJ lays out vertices as integer x,z coords (0..255)
+        // We can compute grid dimensions from min/max x and z
+        gridW = Math.round(maxX - minX) + 1; // NEW
+        gridH = Math.round(maxZ - minZ) + 1; // NEW
+
+        heightGrid = new float[gridW * gridH]; // NEW
+        normalGrid = new float[gridW * gridH][]; // NEW
+
+        // NEW: first pass — record height at each integer grid cell from vertex list
+        java.util.List<float[]> verts   = mesh.getVertices(); // NEW
+        java.util.List<float[]> normals = mesh.getNormals();  // NEW
+        java.util.List<int[]>   faces   = mesh.getFaces();    // NEW
+
+        // NEW: accumulate normals per grid cell (average across shared faces)
+        float[][] normAccum = new float[gridW * gridH][3]; // NEW
+        int[]     normCount = new int[gridW * gridH];      // NEW
+
+        // NEW: build height grid from vertex positions
+        for (float[] v : verts) { // NEW
+            int xi = Math.round(v[0] - minX); // NEW
+            int zi = Math.round(v[2] - minZ); // NEW
+            if (xi >= 0 && xi < gridW && zi >= 0 && zi < gridH) { // NEW
+                heightGrid[zi * gridW + xi] = v[1]; // NEW: y is the height
+            } // NEW
+        } // NEW
+
+        // NEW: accumulate vertex normals per grid cell
+        for (int[] f : faces) { // NEW
+            for (int i = 0; i < 3; i++) { // NEW
+                int vi  = f[i*3];     // NEW
+                int vni = f[i*3 + 2]; // NEW
+                if (vi < 0 || vi >= verts.size()) continue; // NEW
+                float[] v = verts.get(vi); // NEW
+                int xi = Math.round(v[0] - minX); // NEW
+                int zi = Math.round(v[2] - minZ); // NEW
+                if (xi < 0 || xi >= gridW || zi < 0 || zi >= gridH) continue; // NEW
+                int idx = zi * gridW + xi; // NEW
+                if (vni >= 0 && vni < normals.size()) { // NEW
+                    float[] n = normals.get(vni); // NEW
+                    normAccum[idx][0] += n[0]; // NEW
+                    normAccum[idx][1] += n[1]; // NEW
+                    normAccum[idx][2] += n[2]; // NEW
+                    normCount[idx]++; // NEW
+                } // NEW
+            } // NEW
+        } // NEW
+
+        // NEW: finalise normal grid — average and normalise each cell
+        for (int i = 0; i < gridW * gridH; i++) { // NEW
+            if (normCount[i] > 0) { // NEW
+                float nx = normAccum[i][0] / normCount[i]; // NEW
+                float ny = normAccum[i][1] / normCount[i]; // NEW
+                float nz = normAccum[i][2] / normCount[i]; // NEW
+                float len = (float) Math.sqrt(nx*nx + ny*ny + nz*nz); // NEW
+                if (len > 0) { nx /= len; ny /= len; nz /= len; } // NEW
+                normalGrid[i] = new float[]{nx, ny, nz}; // NEW
+            } else { // NEW
+                normalGrid[i] = new float[]{0, 1, 0}; // NEW: default flat normal
+            } // NEW
+        } // NEW
+    } // NEW
+
+    // NEW: bilinearly interpolate terrain height at any world (x, z) position
+    public float getHeightAt(float wx, float wz) { // NEW
+        float gx = wx - minX; // NEW: convert world to grid coords
+        float gz = wz - minZ; // NEW
+
+        int x0 = (int) Math.floor(gx); // NEW
+        int z0 = (int) Math.floor(gz); // NEW
+        int x1 = x0 + 1; // NEW
+        int z1 = z0 + 1; // NEW
+
+        // NEW: clamp to grid bounds
+        x0 = Math.max(0, Math.min(gridW - 1, x0)); // NEW
+        z0 = Math.max(0, Math.min(gridH - 1, z0)); // NEW
+        x1 = Math.max(0, Math.min(gridW - 1, x1)); // NEW
+        z1 = Math.max(0, Math.min(gridH - 1, z1)); // NEW
+
+        float tx = gx - (int) Math.floor(gx); // NEW: fractional part for lerp
+        float tz = gz - (int) Math.floor(gz); // NEW
+
+        // NEW: bilinear interpolation across the four surrounding grid corners
+        float h00 = heightGrid[z0 * gridW + x0]; // NEW
+        float h10 = heightGrid[z0 * gridW + x1]; // NEW
+        float h01 = heightGrid[z1 * gridW + x0]; // NEW
+        float h11 = heightGrid[z1 * gridW + x1]; // NEW
+
+        float h0 = h00 + tx * (h10 - h00); // NEW: lerp along x at z0
+        float h1 = h01 + tx * (h11 - h01); // NEW: lerp along x at z1
+        return h0 + tz * (h1 - h0); // NEW: lerp along z
+    } // NEW
+
+    // NEW: return interpolated surface normal at world (x, z) — used for bounce reflection
+    public float[] getNormalAt(float wx, float wz) { // NEW
+        float gx = wx - minX; // NEW
+        float gz = wz - minZ; // NEW
+
+        int x0 = Math.max(0, Math.min(gridW - 1, (int) Math.floor(gx))); // NEW
+        int z0 = Math.max(0, Math.min(gridH - 1, (int) Math.floor(gz))); // NEW
+        int x1 = Math.max(0, Math.min(gridW - 1, x0 + 1)); // NEW
+        int z1 = Math.max(0, Math.min(gridH - 1, z0 + 1)); // NEW
+
+        float tx = gx - (int) Math.floor(gx); // NEW
+        float tz = gz - (int) Math.floor(gz); // NEW
+
+        float[] n00 = normalGrid[z0 * gridW + x0]; // NEW
+        float[] n10 = normalGrid[z0 * gridW + x1]; // NEW
+        float[] n01 = normalGrid[z1 * gridW + x0]; // NEW
+        float[] n11 = normalGrid[z1 * gridW + x1]; // NEW
+
+        // NEW: bilinearly interpolate normal components
+        float nx = n00[0]*(1-tx)*(1-tz) + n10[0]*tx*(1-tz) + n01[0]*(1-tx)*tz + n11[0]*tx*tz; // NEW
+        float ny = n00[1]*(1-tx)*(1-tz) + n10[1]*tx*(1-tz) + n01[1]*(1-tx)*tz + n11[1]*tx*tz; // NEW
+        float nz = n00[2]*(1-tx)*(1-tz) + n10[2]*tx*(1-tz) + n01[2]*(1-tx)*tz + n11[2]*tx*tz; // NEW
+
+        // NEW: re-normalise after interpolation
+        float len = (float) Math.sqrt(nx*nx + ny*ny + nz*nz); // NEW
+        if (len > 0) { nx /= len; ny /= len; nz /= len; } // NEW
+        else { ny = 1; } // NEW: fallback to flat up
+
+        return new float[]{nx, ny, nz}; // NEW
+    } // NEW
 
     private void parseBounds(String path) {
         try (BufferedReader br = new BufferedReader(new FileReader(path))) {
