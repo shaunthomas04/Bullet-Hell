@@ -10,6 +10,10 @@ import java.nio.FloatBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import javax.sound.sampled.AudioInputStream; // AV: audio import for loading wav files
+import javax.sound.sampled.AudioSystem; // AV: audio import for loading wav files
+import javax.sound.sampled.Clip; // AV: audio import for simple sound playback
+import javax.sound.sampled.FloatControl; // AV: volume control for louder impact sound
 
 import javax.imageio.ImageIO; //ST
 
@@ -25,6 +29,7 @@ public class TerrainGeneration { //ST
     private int height = 600;
     private Terrain terrain; //ST
     private BulletSystem bulletSystem; //ST: bullet rain
+    private SoundPlayer soundPlayer; // AV: handles bullet impact sound
 
     public static void main(String[] args) {
         new TerrainGeneration().run();
@@ -88,11 +93,16 @@ public class TerrainGeneration { //ST
 
         terrain = new Terrain("fractal_terrain.obj", "terrain.png"); //ST: load OBJ + texture
 
+        // AV: load impact sound from the project root
+        soundPlayer = new SoundPlayer();
+        soundPlayer.load("impact.wav");
+
         // ST: init bullet system using terrain bounds so bullets spawn above the terrain
         bulletSystem = new BulletSystem(
                 terrain.getMinX(), terrain.getMaxX(),
                 terrain.getMinZ(), terrain.getMaxZ(),
-                terrain // NEW: pass terrain so bullets can query height
+                terrain,
+                soundPlayer // AV: pass sound player so bullet impacts can trigger audio
         );
     }
 
@@ -163,6 +173,7 @@ class BulletSystem {
     private static final int   MAX_BOUNCES         = 4;
     private static final float SURFACE_OFFSET      = 0.08f;
     private static final float REST_TIME           = 1.0f;
+    private static final float MIN_IMPACT_SOUND_SPEED = 4.0f; // AV: only play sound for stronger hits
 
     private final List<Bullet> bullets = new ArrayList<>();
     private final Random rng = new Random();
@@ -172,24 +183,22 @@ class BulletSystem {
 
     private final OBJMesh smallMesh;
     private final OBJMesh largeMesh;
-    private final int smallTexture;
-    private final int largeTexture;
 
     // AV: texture ids for the bullet PNG files
     private final int smallBulletTexture;
     private final int largeBulletTexture;
 
     private final Terrain terrain; // NEW: reference to terrain for height sampling
+    private final SoundPlayer soundPlayer; // AV: audio player for impact sounds
 
-    public BulletSystem(float minX, float maxX, float minZ, float maxZ, Terrain terrain) { // NEW: terrain param added
+    public BulletSystem(float minX, float maxX, float minZ, float maxZ, Terrain terrain, SoundPlayer soundPlayer) { // AV: sound player param added
         this.minX = minX; this.maxX = maxX;
         this.minZ = minZ; this.maxZ = maxZ;
         this.terrain = terrain; // NEW
+        this.soundPlayer = soundPlayer; // AV
 
-        smallMesh    = new OBJMesh("small_bullet.obj");
-        largeMesh    = new OBJMesh("large_bullet.obj");
-        smallTexture = TextureLoader.load("small_bullet.png");
-        largeTexture = TextureLoader.load("larget_bullet.png");
+        smallMesh = new OBJMesh("small_bullet.obj");
+        largeMesh = new OBJMesh("large_bullet.obj");
 
         // AV: load bullet textures so each bullet mesh can use its own PNG image
         smallBulletTexture = TextureLoader.load("small_bullet.png");
@@ -230,6 +239,11 @@ class BulletSystem {
 
             // AV: only bounce when bullet actually crosses downward through the terrain surface
             if (prevY > terrainY && b.y <= terrainY && b.vy < 0.0f) {
+                // AV: play sound on stronger terrain impacts
+                if (Math.abs(b.vy) > MIN_IMPACT_SOUND_SPEED) {
+                    soundPlayer.play();
+                }
+
                 float[] normal = terrain.getNormalAt(b.x, b.z);
 
                 // AV: place the bullet slightly above the surface to avoid jittering on repeated contact
@@ -274,6 +288,9 @@ class BulletSystem {
     }
 
     public void render() {
+        // AV: disable lighting so bullet PNG colors show without scene tint
+        GL11.glDisable(GL11.GL_LIGHTING);
+
         for (Bullet b : bullets) {
             GL11.glPushMatrix();
 
@@ -315,6 +332,9 @@ class BulletSystem {
 
             GL11.glPopMatrix();
         }
+
+        // AV: restore lighting for the rest of the scene
+        GL11.glEnable(GL11.GL_LIGHTING);
     }
 
     private static class Bullet {
@@ -632,4 +652,50 @@ class Terrain {
     public float getMaxX() { return maxX; }
     public float getMinZ() { return minZ; }
     public float getMaxZ() { return maxZ; }
+}
+
+// AV: sound player using multiple clips so impact sounds can overlap
+class SoundPlayer {
+    private Clip[] clips; // AV: pool of clips so many bullet hits can play close together
+    private FloatControl[] gainControls; // AV: volume control for each clip
+    private int nextClip = 0; // AV: rotates through the clip pool
+
+    public void load(String path) {
+        try {
+            int poolSize = 12; // AV: number of overlapping impact sounds allowed
+            clips = new Clip[poolSize];
+            gainControls = new FloatControl[poolSize];
+
+            for (int i = 0; i < poolSize; i++) {
+                AudioInputStream audio = AudioSystem.getAudioInputStream(new File(path));
+                clips[i] = AudioSystem.getClip();
+                clips[i].open(audio);
+
+                if (clips[i].isControlSupported(FloatControl.Type.MASTER_GAIN)) {
+                    gainControls[i] = (FloatControl) clips[i].getControl(FloatControl.Type.MASTER_GAIN);
+
+                    // AV: boost volume for each clip
+                    float max = gainControls[i].getMaximum();
+                    gainControls[i].setValue(Math.min(max, 4.0f)); 
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void play() {
+        if (clips == null || clips.length == 0) return;
+
+        Clip clip = clips[nextClip];
+
+        if (clip.isRunning()) {
+            clip.stop(); // AV: restart this clip slot if it is still busy
+        }
+
+        clip.setFramePosition(0); // AV: rewind selected clip
+        clip.start();
+
+        nextClip = (nextClip + 1) % clips.length; // AV: move to next clip for overlap
+    }
 }
