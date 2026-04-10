@@ -139,22 +139,30 @@ public class TerrainGeneration { //ST
 
 // ST: manages spawning and updating a rain of small and large bullets
 class BulletSystem {
-    private static final int   MAX_BULLETS  = 80;    // plenty of bullets visible at once
-    private static final float SPAWN_RATE   = 12.0f; // bullets per second
-    private static final float FALL_SPEED   = 18.0f; // units per second downward
-    private static final float SPAWN_HEIGHT = 50.0f; // high enough to see them falling in
-    private static final float KILL_Y       = -5.0f; // cull once below terrain surface
+    // AV: increased active bullet cap so the scene stays filled longer
+    private static final int   MAX_BULLETS  = 160;
+
+    // AV: faster spawn rate for more consistent long-running animation
+    private static final float SPAWN_RATE   = 18.0f;
+
+    private static final float FALL_SPEED   = 18.0f;
+    private static final float SPAWN_HEIGHT = 200.0f; // AV: spawn higher so bullets have more time to fall and bounce across the terrain
+
+    // AV: a little lower failsafe kill height
+    private static final float KILL_Y       = -10.0f;
 
     // ST: scale large enough to be clearly visible in the scene
     private static final float SMALL_SCALE = 1.8f;
     private static final float LARGE_SCALE = 3.2f;
 
-    // NEW: physics constants for bounce behaviour
-    private static final float GRAVITY         = 25.0f;  // NEW: downward acceleration (units/s^2)
-    private static final float BOUNCE_DAMPEN   = 0.45f;  // NEW: fraction of vertical speed kept after bounce (0=dead, 1=perfect)
-    private static final float LATERAL_DAMPEN  = 0.75f;  // NEW: fraction of horizontal speed kept after bounce
-    private static final float MIN_BOUNCE_SPD  = 1.5f;   // NEW: if bounce speed falls below this, bullet comes to rest
-    private static final float MAX_BOUNCES     = 5;      // NEW: maximum number of bounces before bullet dies
+    // AV: tuned bounce settings for smoother terrain collisions
+    private static final float GRAVITY             = 25.0f;
+    private static final float BOUNCE_DAMPEN       = 0.35f;
+    private static final float LATERAL_DAMPEN      = 0.82f;
+    private static final float MIN_VERTICAL_BOUNCE = 1.2f;
+    private static final int   MAX_BOUNCES         = 4;
+    private static final float SURFACE_OFFSET      = 0.08f;
+    private static final float REST_TIME           = 1.0f;
 
     private final List<Bullet> bullets = new ArrayList<>();
     private final Random rng = new Random();
@@ -167,6 +175,10 @@ class BulletSystem {
     private final int smallTexture;
     private final int largeTexture;
 
+    // AV: texture ids for the bullet PNG files
+    private final int smallBulletTexture;
+    private final int largeBulletTexture;
+
     private final Terrain terrain; // NEW: reference to terrain for height sampling
 
     public BulletSystem(float minX, float maxX, float minZ, float maxZ, Terrain terrain) { // NEW: terrain param added
@@ -177,7 +189,11 @@ class BulletSystem {
         smallMesh    = new OBJMesh("small_bullet.obj");
         largeMesh    = new OBJMesh("large_bullet.obj");
         smallTexture = TextureLoader.load("small_bullet.png");
-        largeTexture = TextureLoader.load("large_bullet.png");
+        largeTexture = TextureLoader.load("larget_bullet.png");
+
+        // AV: load bullet textures so each bullet mesh can use its own PNG image
+        smallBulletTexture = TextureLoader.load("small_bullet.png");
+        largeBulletTexture = TextureLoader.load("larget_bullet.png");
     }
 
     public void update(float dt) {
@@ -187,53 +203,61 @@ class BulletSystem {
             spawnBullet();
         }
 
-        // NEW: replaced simple fall with physics update including bounce detection
         bullets.removeIf(b -> {
-            if (b.resting) return false; // NEW: skip physics for resting bullets, keep them alive to show
+            // AV: resting bullets now expire after a short delay so spawning never permanently stops
+            if (b.resting) {
+                b.restTimer -= dt;
+                return b.restTimer <= 0.0f;
+            }
 
-            // NEW: apply gravity to vertical velocity
+            // AV: save previous position so bounce only happens when crossing into the terrain
+            float prevY = b.y;
+
+            // AV: apply gravity to the bullet each frame
             b.vy -= GRAVITY * dt;
 
-            // NEW: update position using velocity
+            // AV: move bullet using current velocity
             b.x += b.vx * dt;
             b.y += b.vy * dt;
             b.z += b.vz * dt;
 
-            // NEW: clamp x/z inside terrain bounds so we can always sample height
-            float cx = Math.max(minX, Math.min(maxX, b.x));
-            float cz = Math.max(minZ, Math.min(maxZ, b.z));
+            // AV: clamp bullet to terrain bounds so sampling always stays valid
+            b.x = Math.max(minX, Math.min(maxX, b.x));
+            b.z = Math.max(minZ, Math.min(maxZ, b.z));
 
-            // NEW: sample terrain height and surface normal at bullet's position
-            float terrainY  = terrain.getHeightAt(cx, cz);
-            float[] normal  = terrain.getNormalAt(cx, cz); // NEW: slope-aware normal
+            // AV: sample terrain height at the bullet's current position
+            float terrainY = terrain.getHeightAt(b.x, b.z);
 
-            // NEW: bounce when bullet reaches or passes through the terrain surface
-            if (b.y <= terrainY) {
-                b.y = terrainY; // NEW: push bullet back to surface
+            // AV: only bounce when bullet actually crosses downward through the terrain surface
+            if (prevY > terrainY && b.y <= terrainY && b.vy < 0.0f) {
+                float[] normal = terrain.getNormalAt(b.x, b.z);
+
+                // AV: place the bullet slightly above the surface to avoid jittering on repeated contact
+                b.y = terrainY + SURFACE_OFFSET;
                 b.bounceCount++;
 
-                // NEW: reflect velocity off the terrain surface normal
-                // reflection formula: v' = v - 2*(v dot n)*n
+                // AV: reflect velocity using terrain normal for smoother slope-aware bounce
                 float dot = b.vx * normal[0] + b.vy * normal[1] + b.vz * normal[2];
-                float rx  = b.vx - 2 * dot * normal[0];
-                float ry  = b.vy - 2 * dot * normal[1];
-                float rz  = b.vz - 2 * dot * normal[2];
+                float rx  = b.vx - 2.0f * dot * normal[0];
+                float ry  = b.vy - 2.0f * dot * normal[1];
+                float rz  = b.vz - 2.0f * dot * normal[2];
 
-                // NEW: apply damping — less energy after each bounce
                 b.vx = rx * LATERAL_DAMPEN;
-                b.vy = ry * BOUNCE_DAMPEN;
+                b.vy = Math.abs(ry) * BOUNCE_DAMPEN;
                 b.vz = rz * LATERAL_DAMPEN;
 
-                // NEW: if bounce is too weak or too many bounces, come to rest
-                float speed = (float) Math.sqrt(b.vx * b.vx + b.vy * b.vy + b.vz * b.vz);
-                if (speed < MIN_BOUNCE_SPD || b.bounceCount >= MAX_BOUNCES) {
+                // AV: if the bounce is too weak or there have been enough bounces, rest briefly then recycle
+                if (b.vy < MIN_VERTICAL_BOUNCE || b.bounceCount >= MAX_BOUNCES) {
                     b.resting = true;
-                    b.vx = 0; b.vy = 0; b.vz = 0;
+                    b.restTimer = REST_TIME;
+                    b.vx = 0.0f;
+                    b.vy = 0.0f;
+                    b.vz = 0.0f;
                 }
             }
 
-            // NEW: remove bullet if it drifts far outside the scene or falls through (failsafe)
-            return b.y < KILL_Y && !b.resting;
+            // AV: emergency cleanup if a bullet somehow falls out of the world
+            return b.y < KILL_Y;
         });
     }
 
@@ -255,6 +279,9 @@ class BulletSystem {
 
             GL11.glTranslatef(b.x, b.y, b.z);
 
+            // AV: make sure bullet textures render at full brightness
+            GL11.glColor3f(1.0f, 1.0f, 1.0f);
+
             // NEW: tilt bullet to match velocity direction while it's moving; lay flat when resting
             if (!b.resting) {
                 float speed = (float) Math.sqrt(b.vx * b.vx + b.vy * b.vy + b.vz * b.vz);
@@ -272,11 +299,17 @@ class BulletSystem {
 
             if (b.large) {
                 GL11.glScalef(LARGE_SCALE, LARGE_SCALE, LARGE_SCALE);
-                GL11.glBindTexture(GL11.GL_TEXTURE_2D, largeTexture);
+
+                // AV: bind the large bullet PNG before rendering the large bullet mesh
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, largeBulletTexture);
+
                 largeMesh.render();
             } else {
                 GL11.glScalef(SMALL_SCALE, SMALL_SCALE, SMALL_SCALE);
-                GL11.glBindTexture(GL11.GL_TEXTURE_2D, smallTexture);
+
+                // AV: bind the small bullet PNG before rendering the small bullet mesh
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, smallBulletTexture);
+
                 smallMesh.render();
             }
 
@@ -290,6 +323,7 @@ class BulletSystem {
         boolean large;
         boolean resting;  // NEW: true once bullet has come to rest on terrain
         int bounceCount;  // NEW: tracks how many times the bullet has bounced
+        float restTimer;  // AV: how long the bullet stays visible before being removed
 
         // NEW: updated constructor to accept initial velocity
         Bullet(float x, float y, float z, boolean large, float vx, float vy, float vz) {
@@ -298,6 +332,7 @@ class BulletSystem {
             this.vx = vx; this.vy = vy; this.vz = vz;
             this.resting = false; // NEW
             this.bounceCount = 0; // NEW
+            this.restTimer = 0.0f; // AV: initialize recycle timer
         }
     }
 }
@@ -421,6 +456,9 @@ class Terrain {
     private float minX = Float.MAX_VALUE,  maxX = -Float.MAX_VALUE;
     private float minZ = Float.MAX_VALUE,  maxZ = -Float.MAX_VALUE;
 
+    // AV: flatten factor used by both terrain rendering and collision sampling
+    private static final float TERRAIN_FLATTEN_SCALE = 0.35f;
+
     // NEW: heightmap and normal map arrays for fast bullet collision sampling
     private int   gridW, gridH;           // NEW: grid dimensions (256x256 for fractal_terrain)
     private float[] heightGrid;           // NEW: [gridW * gridH] sampled heights
@@ -524,7 +562,9 @@ class Terrain {
 
         float h0 = h00 + tx * (h10 - h00); // NEW: lerp along x at z0
         float h1 = h01 + tx * (h11 - h01); // NEW: lerp along x at z1
-        return h0 + tz * (h1 - h0); // NEW: lerp along z
+
+        // AV: flatten sampled terrain height so bullet collision matches the flatter rendered terrain
+        return (h0 + tz * (h1 - h0)) * TERRAIN_FLATTEN_SCALE;
     } // NEW
 
     // NEW: return interpolated surface normal at world (x, z) — used for bounce reflection
@@ -549,6 +589,9 @@ class Terrain {
         float nx = n00[0]*(1-tx)*(1-tz) + n10[0]*tx*(1-tz) + n01[0]*(1-tx)*tz + n11[0]*tx*tz; // NEW
         float ny = n00[1]*(1-tx)*(1-tz) + n10[1]*tx*(1-tz) + n01[1]*(1-tx)*tz + n11[1]*tx*tz; // NEW
         float nz = n00[2]*(1-tx)*(1-tz) + n10[2]*tx*(1-tz) + n01[2]*(1-tx)*tz + n11[2]*tx*tz; // NEW
+
+        // AV: bias the normal upward so bouncing behaves more like flatter ground
+        ny *= 2.5f;
 
         // NEW: re-normalise after interpolation
         float len = (float) Math.sqrt(nx*nx + ny*ny + nz*nz); // NEW
@@ -575,8 +618,11 @@ class Terrain {
     }
 
     public void render() {
+        GL11.glPushMatrix();
+        GL11.glScalef(1.0f, TERRAIN_FLATTEN_SCALE, 1.0f); // AV: flatten terrain visually so hills are less steep
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId);
         mesh.render();
+        GL11.glPopMatrix();
     }
 
     public float getCenterX()      { return (minX + maxX) / 2.0f; }
