@@ -47,7 +47,7 @@ public class TerrainGeneration { //ST
             throw new IllegalStateException("Unable to initialize GLFW");
         }
 
-        window = GLFW.glfwCreateWindow(width, height, "Terrain Generation - Bullet Rain", 0, 0);
+        window = GLFW.glfwCreateWindow(width, height, "Bullet Hell", 0, 0);
         if (window == 0) {
             throw new RuntimeException("Failed to create GLFW window");
         }
@@ -58,8 +58,8 @@ public class TerrainGeneration { //ST
         GL11.glEnable(GL11.GL_DEPTH_TEST);
         GL11.glDepthFunc(GL11.GL_LEQUAL);
 
-        // ST: sky-blue background so bullets stand out against the scene
-        GL11.glClearColor(0.53f, 0.81f, 0.98f, 1.0f);
+        // ST: red background so bullets stand out against the scene
+        GL11.glClearColor(0.67f, 0.30f, 0.30f, 1.0f);
 
         GL11.glMatrixMode(GL11.GL_PROJECTION);
         GL11.glLoadIdentity();
@@ -92,6 +92,8 @@ public class TerrainGeneration { //ST
         GL11.glEnable(GL11.GL_NORMALIZE);
 
         terrain = new Terrain("fractal_terrain.obj", "terrain.png"); //ST: load OBJ + texture
+//        terrain = new Terrain("fractal_terrain.obj", "black-stone.png"); //ST: load OBJ + texture
+
 
         // AV: load impact sound from the project root
         soundPlayer = new SoundPlayer();
@@ -124,7 +126,7 @@ public class TerrainGeneration { //ST
 
             // no X rotation = perfectly level camera
             // pull back far enough to see the full terrain width, sit at mid-height
-            GL11.glTranslatef(-centerX, -maxDim * 0.15f, -maxDim * 1.4f);
+            GL11.glTranslatef(-centerX, -maxDim * 0.24f, -maxDim * 1.4f);
 
             terrain.render(); //ST
 
@@ -162,8 +164,8 @@ class BulletSystem {
     private static final float KILL_Y       = -10.0f;
 
     // ST: scale large enough to be clearly visible in the scene
-    private static final float SMALL_SCALE = 1.8f;
-    private static final float LARGE_SCALE = 3.2f;
+    private static final float SMALL_SCALE = 1.2f;
+    private static final float LARGE_SCALE = 5.2f;
 
     // AV: tuned bounce settings for smoother terrain collisions
     private static final float GRAVITY             = 25.0f;
@@ -201,8 +203,11 @@ class BulletSystem {
         largeMesh = new OBJMesh("large_bullet.obj");
 
         // AV: load bullet textures so each bullet mesh can use its own PNG image
+        //https://pixabay.com/illustrations/grunge-golden-gold-backround-6097785/
         smallBulletTexture = TextureLoader.load("small_bullet.png");
-        largeBulletTexture = TextureLoader.load("larget_bullet.png");
+
+        //https://pixabay.com/vectors/gold-square-label-metallic-fund-1412245/
+        largeBulletTexture = TextureLoader.load("large_bullet.png");
     }
 
     public void update(float dt) {
@@ -311,11 +316,8 @@ class BulletSystem {
                 }
             } else {
                 // ST: rotate so bullet points nose-down (falling posture)
-                if (b.large) {
-                    GL11.glRotatef(90, 1, 0, 0);
-                } else {
-                    GL11.glRotatef(180, 1, 0, 0);
-                }
+                GL11.glRotatef(180, 1, 0, 0);
+
             }
 
             if (b.large) {
@@ -442,19 +444,41 @@ class OBJMesh {
 
 // ST: static texture loader — RGBA so alpha channels work
 class TextureLoader {
+    private static int nextPow2(int n) {
+        int p = 1;
+        while (p < n) p <<= 1;
+        return p;
+    }
+
     public static int load(String path) {
         try {
             BufferedImage img = ImageIO.read(new File(path));
             int w = img.getWidth(), h = img.getHeight();
+
+            // Scale up to power-of-two dimensions if needed
+            int pw = nextPow2(w);
+            int ph = nextPow2(h);
+            if (pw != w || ph != h) {
+                java.awt.image.BufferedImage scaled = new java.awt.image.BufferedImage(pw, ph, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+                java.awt.Graphics2D g = scaled.createGraphics();
+                g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION,
+                        java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                g.drawImage(img, 0, 0, pw, ph, null);
+                g.dispose();
+                img = scaled;
+                w = pw;
+                h = ph;
+            }
+
             int[] pixels = new int[w * h];
             img.getRGB(0, 0, w, h, pixels, 0, w);
 
-            FloatBuffer buffer = BufferUtils.createFloatBuffer(w * h * 4);
+            java.nio.ByteBuffer buffer = BufferUtils.createByteBuffer(w * h * 4);
             for (int pixel : pixels) {
-                buffer.put(((pixel >> 16) & 0xFF) / 255.0f); // R
-                buffer.put(((pixel >> 8)  & 0xFF) / 255.0f); // G
-                buffer.put((pixel         & 0xFF) / 255.0f); // B
-                buffer.put(((pixel >> 24) & 0xFF) / 255.0f); // A
+                buffer.put((byte)((pixel >> 16) & 0xFF)); // R
+                buffer.put((byte)((pixel >> 8)  & 0xFF)); // G
+                buffer.put((byte)(pixel         & 0xFF)); // B
+                buffer.put((byte)((pixel >> 24) & 0xFF)); // A
             }
             buffer.flip();
 
@@ -465,7 +489,7 @@ class TextureLoader {
             GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL11.GL_REPEAT);
             GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL11.GL_REPEAT);
             GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA8, w, h, 0,
-                    GL12.GL_BGRA, GL11.GL_FLOAT, buffer);
+                    GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, buffer);
             return texId;
         } catch (IOException e) {
             e.printStackTrace();
