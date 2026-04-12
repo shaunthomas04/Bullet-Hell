@@ -22,11 +22,12 @@ import org.lwjgl.glfw.GLFW;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
+import org.lwjgl.opengl.GL13;
 
 public class TerrainGeneration { //ST
     private long window;
-    private int width = 800;
-    private int height = 600;
+    private int width = 1920;
+    private int height = 1080;
     private Terrain terrain; //ST
     private BulletSystem bulletSystem; //ST: bullet rain
     private SoundPlayer soundPlayer; // AV: handles bullet impact sound
@@ -47,6 +48,7 @@ public class TerrainGeneration { //ST
             throw new IllegalStateException("Unable to initialize GLFW");
         }
 
+        GLFW.glfwWindowHint(GLFW.GLFW_SAMPLES, 4);
         window = GLFW.glfwCreateWindow(width, height, "Bullet Hell", 0, 0);
         if (window == 0) {
             throw new RuntimeException("Failed to create GLFW window");
@@ -54,6 +56,7 @@ public class TerrainGeneration { //ST
 
         GLFW.glfwMakeContextCurrent(window);
         GL.createCapabilities();
+        GL11.glEnable(GL13.GL_MULTISAMPLE);
 
         GL11.glEnable(GL11.GL_DEPTH_TEST);
         GL11.glDepthFunc(GL11.GL_LEQUAL);
