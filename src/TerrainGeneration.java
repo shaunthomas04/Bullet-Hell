@@ -311,11 +311,17 @@ class BulletSystem {
                 }
             } else {
                 // ST: rotate so bullet points nose-down (falling posture)
-                GL11.glRotatef(180, 1, 0, 0);
+                if (b.large) {
+                    GL11.glRotatef(90, 1, 0, 0);
+                } else {
+                    GL11.glRotatef(180, 1, 0, 0);
+                }
             }
 
             if (b.large) {
                 GL11.glScalef(LARGE_SCALE, LARGE_SCALE, LARGE_SCALE);
+
+                GL11.glRotatef(90, 1, 0, 0);  // rotate 90° around X to stand it upright
 
                 // AV: bind the large bullet PNG before rendering the large bullet mesh
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, largeBulletTexture);
