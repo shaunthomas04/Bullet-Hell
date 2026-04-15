@@ -48,7 +48,7 @@ public class TerrainGeneration {
         }
 
         GLFW.glfwWindowHint(GLFW.GLFW_SAMPLES, 4);
-        window = GLFW.glfwCreateWindow(width, height, "Metallic Reflections", 0, 0);
+        window = GLFW.glfwCreateWindow(width, height, "500 Bullets = WOW", 0, 0);
         if (window == 0) {
             throw new RuntimeException("Failed to create GLFW window");
         }
