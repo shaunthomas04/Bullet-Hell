@@ -100,8 +100,14 @@ public class TerrainGeneration {
         GL11.glEnable(GL11.GL_NORMALIZE);
 
         terrain = new Terrain("fractal_terrain.obj", "terrain.png");
+
+        // AV: audio setup for bullet impacts
         soundPlayer = new SoundPlayer();
-        soundPlayer.load("impact.wav");
+        soundPlayer.loadAll(new String[]{
+                "impact0.wav",
+                "impact1.wav",
+                "impact2.wav"
+        });
 
         bulletSystem = new BulletSystem(
                 terrain.getMinX(), terrain.getMaxX(),
@@ -220,6 +226,7 @@ class BulletSystem {
                 if (Math.abs(b.vy) > MIN_IMPACT_SOUND_SPEED) {
                     soundPlayer.play();
                 }
+
                 float[] normal = terrain.getNormalAt(b.x, b.z);
                 b.y = terrainY + SURFACE_OFFSET;
                 b.bounceCount++;
@@ -235,7 +242,9 @@ class BulletSystem {
                 if (b.vy < MIN_VERTICAL_BOUNCE || b.bounceCount >= MAX_BOUNCES) {
                     b.resting = true;
                     b.restTimer = REST_TIME;
-                    b.vx = 0.0f; b.vy = 0.0f; b.vz = 0.0f;
+                    b.vx = 0.0f;
+                    b.vy = 0.0f;
+                    b.vz = 0.0f;
                 }
             }
             return b.y < KILL_Y;
@@ -302,10 +311,18 @@ class BulletSystem {
         boolean large, resting;
         int bounceCount;
         float restTimer;
+
         Bullet(float x, float y, float z, boolean large, float vx, float vy, float vz) {
-            this.x = x; this.y = y; this.z = z;
-            this.large = large; this.vx = vx; this.vy = vy; this.vz = vz;
-            this.resting = false; this.bounceCount = 0; this.restTimer = 0.0f;
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.large = large;
+            this.vx = vx;
+            this.vy = vy;
+            this.vz = vz;
+            this.resting = false;
+            this.bounceCount = 0;
+            this.restTimer = 0.0f;
         }
     }
 }
@@ -342,7 +359,9 @@ class OBJMesh {
                     faces.add(face);
                 }
             }
-        } catch (IOException e) { e.printStackTrace(); }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
         if (texCoords.isEmpty()) texCoords.add(new float[]{0, 0});
         if (normals.isEmpty())   normals.add(new float[]{0, 1, 0});
     }
@@ -354,8 +373,14 @@ class OBJMesh {
                 int vni = f[i*3 + 2];
                 int vti = f[i*3 + 1];
                 int vi  = f[i*3];
-                if (vni >= 0) { float[] n = normals.get(vni); GL11.glNormal3f(n[0], n[1], n[2]); }
-                if (vti >= 0) { float[] uv = texCoords.get(vti); GL11.glTexCoord2f(uv[0], uv[1]); }
+                if (vni >= 0) {
+                    float[] n = normals.get(vni);
+                    GL11.glNormal3f(n[0], n[1], n[2]);
+                }
+                if (vti >= 0) {
+                    float[] uv = texCoords.get(vti);
+                    GL11.glTexCoord2f(uv[0], uv[1]);
+                }
                 float[] v = vertices.get(vi);
                 GL11.glVertex3f(v[0], v[1], v[2]);
             }
@@ -369,7 +394,12 @@ class OBJMesh {
 }
 
 class TextureLoader {
-    private static int nextPow2(int n) { int p = 1; while (p < n) p <<= 1; return p; }
+    private static int nextPow2(int n) {
+        int p = 1;
+        while (p < n) p <<= 1;
+        return p;
+    }
+
     public static int load(String path) {
         try {
             BufferedImage img = ImageIO.read(new File(path));
@@ -378,7 +408,9 @@ class TextureLoader {
             if (pw != w || ph != h) {
                 BufferedImage sc = new BufferedImage(pw, ph, BufferedImage.TYPE_INT_ARGB);
                 sc.getGraphics().drawImage(img, 0, 0, pw, ph, null);
-                img = sc; w = pw; h = ph;
+                img = sc;
+                w = pw;
+                h = ph;
             }
             int[] pixels = new int[w * h];
             img.getRGB(0, 0, w, h, pixels, 0, w);
@@ -396,7 +428,9 @@ class TextureLoader {
             GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
             GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA8, w, h, 0, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, buffer);
             return texId;
-        } catch (IOException e) { return 0; }
+        } catch (IOException e) {
+            return 0;
+        }
     }
 }
 
@@ -429,7 +463,9 @@ class Terrain {
 
         for (float[] v : verts) {
             int xi = Math.round(v[0] - minX), zi = Math.round(v[2] - minZ);
-            if (xi >= 0 && xi < gridW && zi >= 0 && zi < gridH) heightGrid[zi * gridW + xi] = v[1];
+            if (xi >= 0 && xi < gridW && zi >= 0 && zi < gridH) {
+                heightGrid[zi * gridW + xi] = v[1];
+            }
         }
 
         for (int[] f : faces) {
@@ -440,17 +476,22 @@ class Terrain {
                 int xi = Math.round(v[0]-minX), zi = Math.round(v[2]-minZ);
                 if (xi >= 0 && xi < gridW && zi >= 0 && zi < gridH && vni >= 0 && vni < norms.size()) {
                     float[] n = norms.get(vni);
-                    normAcc[zi*gridW+xi][0]+=n[0]; normAcc[zi*gridW+xi][1]+=n[1]; normAcc[zi*gridW+xi][2]+=n[2];
+                    normAcc[zi*gridW+xi][0] += n[0];
+                    normAcc[zi*gridW+xi][1] += n[1];
+                    normAcc[zi*gridW+xi][2] += n[2];
                     normCnt[zi*gridW+xi]++;
                 }
             }
         }
+
         for (int i = 0; i < gridW*gridH; i++) {
             if (normCnt[i] > 0) {
                 float nx = normAcc[i][0]/normCnt[i], ny = normAcc[i][1]/normCnt[i], nz = normAcc[i][2]/normCnt[i];
                 float len = (float)Math.sqrt(nx*nx+ny*ny+nz*nz);
                 normalGrid[i] = (len > 0) ? new float[]{nx/len, ny/len, nz/len} : new float[]{0,1,0};
-            } else normalGrid[i] = new float[]{0,1,0};
+            } else {
+                normalGrid[i] = new float[]{0,1,0};
+            }
         }
     }
 
@@ -458,10 +499,11 @@ class Terrain {
         float gx = wx - minX, gz = wz - minZ;
         int x0 = (int)Math.floor(gx), z0 = (int)Math.floor(gz);
         int x1 = Math.min(gridW-1, x0+1), z1 = Math.min(gridH-1, z0+1);
-        x0 = Math.max(0, Math.min(gridW-1, x0)); z0 = Math.max(0, Math.min(gridH-1, z0));
+        x0 = Math.max(0, Math.min(gridW-1, x0));
+        z0 = Math.max(0, Math.min(gridH-1, z0));
         float tx = gx - x0, tz = gz - z0;
         float h00 = heightGrid[z0*gridW+x0], h10 = heightGrid[z0*gridW+x1], h01 = heightGrid[z1*gridW+x0], h11 = heightGrid[z1*gridW+x1];
-        return (h00+(h10-h00)*tx + (h01+(h11-h01)*tx - (h00+(h10-h00)*tx))*tz) * TERRAIN_FLATTEN_SCALE;
+        return (h00 + (h10 - h00) * tx + (h01 + (h11 - h01) * tx - (h00 + (h10 - h00) * tx)) * tz) * TERRAIN_FLATTEN_SCALE;
     }
 
     public float[] getNormalAt(float wx, float wz) {
@@ -477,10 +519,14 @@ class Terrain {
                 if (line.trim().startsWith("v ")) {
                     String[] t = line.trim().split("\\s+");
                     float x = Float.parseFloat(t[1]), z = Float.parseFloat(t[3]);
-                    minX = Math.min(minX, x); maxX = Math.max(maxX, x); minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
+                    minX = Math.min(minX, x);
+                    maxX = Math.max(maxX, x);
+                    minZ = Math.min(minZ, z);
+                    maxZ = Math.max(maxZ, z);
                 }
             }
-        } catch (IOException e) {}
+        } catch (IOException e) {
+        }
     }
 
     public void render() {
@@ -490,30 +536,70 @@ class Terrain {
         mesh.render();
         GL11.glPopMatrix();
     }
+
     public float getCenterX() { return (minX+maxX)/2; }
     public float getMaxDimension() { return Math.max(maxX-minX, maxZ-minZ); }
-    public float getMinX() { return minX; } public float getMaxX() { return maxX; }
-    public float getMinZ() { return minZ; } public float getMaxZ() { return maxZ; }
+    public float getMinX() { return minX; }
+    public float getMaxX() { return maxX; }
+    public float getMinZ() { return minZ; }
+    public float getMaxZ() { return maxZ; }
 }
 
+// AV: random impact audio system - loads 3 wav files and plays one random sound whenever a bullet hits terrain
 class SoundPlayer {
-    private Clip[] clips;
-    private int next = 0;
-    public void load(String path) {
+    private static final int CLIPS_PER_SOUND = 8;
+
+    private Clip[][] clipPools;
+    private int[] nextClipIndex;
+    private final Random rng = new Random();
+
+    public void loadAll(String[] paths) {
         try {
-            clips = new Clip[12];
-            for (int i = 0; i < 12; i++) {
-                AudioInputStream ai = AudioSystem.getAudioInputStream(new File(path));
-                clips[i] = AudioSystem.getClip();
-                clips[i].open(ai);
+            clipPools = new Clip[paths.length][CLIPS_PER_SOUND];
+            nextClipIndex = new int[paths.length];
+
+            for (int soundIndex = 0; soundIndex < paths.length; soundIndex++) {
+                for (int clipIndex = 0; clipIndex < CLIPS_PER_SOUND; clipIndex++) {
+                    AudioInputStream audio = AudioSystem.getAudioInputStream(new File(paths[soundIndex]));
+                    clipPools[soundIndex][clipIndex] = AudioSystem.getClip();
+                    clipPools[soundIndex][clipIndex].open(audio);
+
+                    if (clipPools[soundIndex][clipIndex].isControlSupported(FloatControl.Type.MASTER_GAIN)) {
+                        FloatControl gain = (FloatControl) clipPools[soundIndex][clipIndex]
+                                .getControl(FloatControl.Type.MASTER_GAIN);
+                        gain.setValue(gain.getMaximum());
+                    }
+                }
             }
-        } catch (Exception e) {}
+        } catch (Exception e) {
+            clipPools = null;
+            nextClipIndex = null;
+            e.printStackTrace();
+        }
     }
+
     public void play() {
-        if (clips == null) return;
-        if (clips[next].isRunning()) clips[next].stop();
-        clips[next].setFramePosition(0);
-        clips[next].start();
-        next = (next + 1) % clips.length;
+        if (clipPools == null || clipPools.length == 0) return;
+
+        int soundIndex = rng.nextInt(clipPools.length);
+
+        if (clipPools[soundIndex] == null) return;
+
+        Clip[] pool = clipPools[soundIndex];
+        int clipIndex = nextClipIndex[soundIndex];
+
+        if (pool == null || clipIndex < 0 || clipIndex >= pool.length) return;
+        if (pool[clipIndex] == null) return;
+
+        Clip clip = pool[clipIndex];
+
+        if (clip.isRunning()) {
+            clip.stop();
+        }
+
+        clip.setFramePosition(0);
+        clip.start();
+
+        nextClipIndex[soundIndex] = (clipIndex + 1) % pool.length;
     }
 }
