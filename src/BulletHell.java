@@ -23,7 +23,7 @@ import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
 import org.lwjgl.opengl.GL13;
 
-/* shaun start
+/* SHAUN start
  * This is the main class that controls the entire program.
  * It is responsible for setting up the window, initializing OpenGL,
  * loading all major systems like terrain, bullets, and sound,
@@ -207,7 +207,7 @@ public class BulletHell {
     }
 }
 
-/* arturo start
+/* ARTURO start
  * This class handles all bullet-related behavior in the scene.
  * It is responsible for spawning bullets over time, updating their physics,
  * handling collisions with the terrain, playing impact sounds,
@@ -458,7 +458,7 @@ class BulletSystem {
     }
 }
 
-/* josh start
+/* JOSH start
  * This class is responsible for loading and rendering 3D models
  * from OBJ files.
  */
@@ -770,7 +770,7 @@ class Terrain {
 }
 
 // AV: random impact audio system - loads 3 wav files and plays one random sound whenever a bullet hits terrain
-/* arturo start
+/* ARTURO start
  * This class handles all sound effects in the game.
  * It loads multiple versions of impact sounds
  * and allows them to play simultaneously without cutting each other off.
