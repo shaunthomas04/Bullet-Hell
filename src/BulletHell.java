@@ -23,6 +23,12 @@ import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
 import org.lwjgl.opengl.GL13;
 
+/* shaun start
+ * This is the main class that controls the entire program.
+ * It is responsible for setting up the window, initializing OpenGL,
+ * loading all major systems like terrain, bullets, and sound,
+ * and then running the main game loop.
+ */
 public class BulletHell {
     private long window;
     private int width = 1920;
@@ -31,11 +37,20 @@ public class BulletHell {
     private BulletSystem bulletSystem;
     private SoundPlayer soundPlayer;
 
+    /*
+     * This is the entry point of the program.
+     * It simply creates an instance of the game and starts it.
+     */
     public static void main(String[] args) {
         //JC entry point, creates the application instance and starts the run loop
         new BulletHell().run();
     }
 
+    /*
+     * This method controls the overall lifecycle of the program.
+     * It first initializes everything, then runs the main loop,
+     * and finally cleans up resources when the program ends.
+     */
     public void run() {
         //JC calls init to set up the window and OpenGL state, then enters the main loop
         init();
@@ -44,6 +59,14 @@ public class BulletHell {
         GLFW.glfwTerminate();
     }
 
+    /*
+     * In this method, we set up everything needed before the game starts running.
+     * This includes creating the window, enabling OpenGL features like depth testing
+     * and lighting, and configuring the camera projection.
+     *
+     * We also load all major components here, including the terrain mesh,
+     * the bullet system, and the sound system.
+     */
     private void init() {
         //JC initializes GLFW and creates the application window
         if (!GLFW.glfwInit()) {
@@ -126,6 +149,12 @@ public class BulletHell {
         );
     }
 
+    /*
+     * This is the main game loop that runs continuously until the window is closed.
+     * Each frame, we calculate delta time so movement stays consistent,
+     * clear the screen, position the camera, render the terrain,
+     * update and render all bullets, and then swap buffers to display the frame.
+     */
     private void loop() {
         //JC records the start time in nanoseconds to calculate delta time each frame
         long lastTime = System.nanoTime();
@@ -160,6 +189,11 @@ public class BulletHell {
         }
     }
 
+    /*
+     * This method sets up the camera’s perspective projection.
+     * It defines how wide the field of view is, how the scene is scaled
+     * based on the window size, and what range of depth is visible.
+     */
     private void setPerspectiveProjection(float fov, float aspect, float zNear, float zFar) {
         //JC computes the frustum bounds from the field of view angle and aspect ratio
         float ymax = (float)(zNear * Math.tan(Math.toRadians(fov / 2.0)));
@@ -173,6 +207,12 @@ public class BulletHell {
     }
 }
 
+/* arturo start
+ * This class handles all bullet-related behavior in the scene.
+ * It is responsible for spawning bullets over time, updating their physics,
+ * handling collisions with the terrain, playing impact sounds,
+ * and rendering them on screen.
+ */
 class BulletSystem {
     //ST defines the cap on how many bullets can exist in the scene at once
     private static final int   MAX_BULLETS  = 160;
@@ -216,6 +256,11 @@ class BulletSystem {
     private final Terrain terrain;
     private final SoundPlayer soundPlayer;
 
+    /*
+     * In the constructor, we initialize the bullet system by storing terrain boundaries,
+     * loading the 3D models for both small and large bullets,
+     * and loading their corresponding textures.
+     */
     public BulletSystem(float minX, float maxX, float minZ, float maxZ, Terrain terrain, SoundPlayer soundPlayer) {
         //JC stores terrain boundary values used to clamp bullet positions during simulation
         this.minX = minX; this.maxX = maxX;
@@ -231,6 +276,19 @@ class BulletSystem {
         largeBulletTexture = TextureLoader.load("large_bullet.png");
     }
 
+    /*
+     * This method runs every frame and updates all bullet behavior.
+     * It first spawns new bullets based on a timed rate.
+     *
+     * Then, for each bullet, it applies physics by adding gravity,
+     * updating position using velocity, and checking for collisions with the terrain.
+     *
+     * When a bullet hits the terrain, we calculate a bounce using the surface normal,
+     * reduce its energy using dampening, and optionally play a sound if the impact is strong enough.
+     *
+     * If the bullet slows down too much or bounces too many times,
+     * it transitions into a resting state and is eventually removed.
+     */
     public void update(float dt) {
         //ST advances the spawn accumulator and spawns a new bullet each time it reaches a whole number
         spawnAccumulator += dt * SPAWN_RATE;
@@ -294,6 +352,11 @@ class BulletSystem {
         });
     }
 
+    /*
+     * This method creates a new bullet at a random position within the terrain bounds.
+     * It assigns a random horizontal velocity, a fixed downward velocity,
+     * and randomly decides whether the bullet is small or large.
+     */
     private void spawnBullet() {
         //ST picks a random X and Z position within the terrain bounds for the new bullet
         float x = minX + rng.nextFloat() * (maxX - minX);
@@ -306,6 +369,14 @@ class BulletSystem {
         bullets.add(new Bullet(x, SPAWN_HEIGHT, z, large, vx, -FALL_SPEED, vz));
     }
 
+    /*
+     * This method is responsible for drawing all bullets.
+     * For each bullet, we apply transformations like translation and rotation,
+     * align the bullet with its direction of motion,
+     * and then render the correct mesh and texture.
+     *
+     * We also apply lighting properties so the bullets appear shiny and metallic.
+     */
     public void render() {
         //ST enables lighting and disables color material so per-material specular properties take effect
         GL11.glEnable(GL11.GL_LIGHTING);
@@ -359,6 +430,11 @@ class BulletSystem {
         GL11.glEnable(GL11.GL_COLOR_MATERIAL);
     }
 
+    /*
+     * This inner class represents a single bullet.
+     * It stores its position, velocity, size, bounce count,
+     * and whether it is still moving or has come to rest.
+     */
     private static class Bullet {
         float x, y, z, vx, vy, vz;
         boolean large, resting;
@@ -382,12 +458,23 @@ class BulletSystem {
     }
 }
 
+/* josh start
+ * This class is responsible for loading and rendering 3D models
+ * from OBJ files.
+ */
 class OBJMesh {
     private final List<float[]> vertices  = new ArrayList<>();
     private final List<float[]> normals   = new ArrayList<>();
     private final List<float[]> texCoords = new ArrayList<>();
     private final List<int[]>   faces     = new ArrayList<>();
 
+    /*
+     * In the constructor, we read the OBJ file line by line.
+     * We extract vertex positions, normals for lighting,
+     * texture coordinates, and face definitions.
+     *
+     * This data is stored so it can later be sent to OpenGL for rendering.
+     */
     public OBJMesh(String path) {
         //JC opens the OBJ file and reads it line by line to extract geometry data
         try (BufferedReader br = new BufferedReader(new FileReader(path))) {
@@ -427,6 +514,14 @@ class OBJMesh {
         if (normals.isEmpty())   normals.add(new float[]{0, 1, 0});
     }
 
+
+    /*
+     * This method renders the mesh by looping through each face
+     * and sending its vertices to OpenGL as triangles.
+     *
+     * For each vertex, we apply its normal for lighting
+     * and its texture coordinates so the texture maps correctly.
+     */
     public void render() {
         //JC iterates over every face and submits its three vertices to the GPU as triangles
         GL11.glBegin(GL11.GL_TRIANGLES);
@@ -457,6 +552,10 @@ class OBJMesh {
     public List<int[]>   getFaces()    { return faces;    }
 }
 
+/*
+ * This class handles loading image files and converting them into textures
+ * that OpenGL can use.
+ */
 class TextureLoader {
     private static int nextPow2(int n) {
         int p = 1;
@@ -465,6 +564,13 @@ class TextureLoader {
         return p;
     }
 
+    /*
+     * This method loads an image from disk, ensures its dimensions
+     * are compatible with OpenGL, and converts it into a byte buffer.
+     *
+     * The image data is then uploaded to the GPU as a texture,
+     * and the texture ID is returned so it can be used during rendering.
+     */
     public static int load(String path) {
         try {
             //ST reads the image file from disk into a BufferedImage
@@ -504,6 +610,12 @@ class TextureLoader {
     }
 }
 
+/*
+ * This class represents the terrain in the scene.
+ * It is responsible for rendering the ground,
+ * as well as providing height and surface normal data
+ * for physics calculations like bullet collisions.
+ */
 class Terrain {
     private final OBJMesh mesh;
     private int textureId;
@@ -516,6 +628,11 @@ class Terrain {
     //AV flat array storing the averaged surface normal at each grid cell for bounce calculations
     private float[][] normalGrid;
 
+    /*
+     * In the constructor, we load the terrain mesh and its texture.
+     * We also build a grid of height values and normals,
+     * which allows fast lookup during physics calculations.
+     */
     public Terrain(String objPath, String texturePath) {
         //JC loads the terrain OBJ mesh and its texture, then builds the height and normal lookup grids
         mesh = new OBJMesh(objPath);
@@ -524,6 +641,12 @@ class Terrain {
         buildHeightGrid();
     }
 
+    /*
+     * This method converts the terrain mesh into a grid of height values.
+     * It also averages normals at each grid cell so we can simulate smooth surfaces.
+     *
+     * This makes collision detection much faster than checking the full mesh.
+     */
     private void buildHeightGrid() {
         //JC creates a 2D grid of height values sampled from terrain vertices for fast height lookup during physics
         gridW = Math.round(maxX - minX) + 1;
@@ -574,6 +697,11 @@ class Terrain {
         }
     }
 
+    /*
+     * This method returns the height of the terrain at a given position.
+     * It uses interpolation between nearby grid points
+     * so the terrain appears smooth instead of blocky.
+     */
     public float getHeightAt(float wx, float wz) {
         //JC bilinearly interpolates between the four surrounding grid cells to get a smooth height value
         float gx = wx - minX, gz = wz - minZ;
@@ -586,6 +714,10 @@ class Terrain {
         return (h00 + (h10 - h00) * tx + (h01 + (h11 - h01) * tx - (h00 + (h10 - h00) * tx)) * tz) * TERRAIN_FLATTEN_SCALE;
     }
 
+    /*
+     * This method returns the surface normal at a given position.
+     * The normal is used to calculate realistic bounce directions.
+     */
     public float[] getNormalAt(float wx, float wz) {
         //AV looks up the precomputed terrain normal at the nearest grid cell for use in bounce reflection
         int gx = Math.max(0, Math.min(gridW-1, Math.round(wx-minX)));
@@ -611,6 +743,11 @@ class Terrain {
         }
     }
 
+    /*
+     * This method renders the terrain mesh.
+     * It applies a vertical scale to flatten the terrain slightly,
+     * binds the texture, and then draws the mesh.
+     */
     public void render() {
         GL11.glPushMatrix();
         //ST applies the flatten scale on the Y axis to compress terrain height before rendering
@@ -633,6 +770,11 @@ class Terrain {
 }
 
 // AV: random impact audio system - loads 3 wav files and plays one random sound whenever a bullet hits terrain
+/* arturo start
+ * This class handles all sound effects in the game.
+ * It loads multiple versions of impact sounds
+ * and allows them to play simultaneously without cutting each other off.
+ */
 class SoundPlayer {
     //AV each sound file gets a pool of 8 clips so multiple impacts can overlap without cutting each other off
     private static final int CLIPS_PER_SOUND = 8;
@@ -641,6 +783,11 @@ class SoundPlayer {
     private int[] nextClipIndex;
     private final Random rng = new Random();
 
+    /*
+     * This method loads each sound file and creates multiple clip instances for it.
+     * This allows multiple sounds to play at the same time,
+     * which is important when many bullets hit at once.
+     */
     public void loadAll(String[] paths) {
         try {
             //AV allocates a 2D pool array with one row per sound file and one clip per pool slot
@@ -670,6 +817,11 @@ class SoundPlayer {
         }
     }
 
+    /*
+     * This method plays a random impact sound.
+     * It selects a clip from the pool and restarts it from the beginning,
+     * allowing for rapid and overlapping playback.
+     */
     public void play() {
         if (clipPools == null || clipPools.length == 0) return;
 
