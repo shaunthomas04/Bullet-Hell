@@ -1,19 +1,17 @@
 # Bullet Hell
 
-> **YouTube demo:** [Add the link to our video demo here](YOUR_YOUTUBE_VIDEO_URL)
+[![Bullet Hell Demo](https://img.youtube.com/vi/_Nd2mj_wYao/maxresdefault.jpg)](https://youtu.be/_Nd2mj_wYao)
 
 ## About the Project
 
-**Bullet Hell** is a graphics project built around one simple idea: fill the screen with an impressive storm of projectiles and make it fun to watch and interact with.
+Bullet Hell is a graphics project inspired by the chaos and energy of classic bullet-dodging shooters. We wanted to create a visually intense experience built around screen-filling effects, rapid movement, and a satisfying sense of overwhelming action.
 
-We got the idea for this project while talking with ChatGPT about how awesome a bullet-hell graphics project could be. ChatGPT summed it up with the phrase **“500 bullets = WOW,”** and that confirmed in our minds that this was the right choice for our graphics project.
+The idea for this project came from a conversation with ChatGPT about what would make for an awesome graphics project. We talked about the impact of a massive number of bullets on screen and how visually impressive that could be. When ChatGPT said, **"500 bullets = WOW"**, it felt like the perfect description of what we were trying to build. That line confirmed in our minds that this was absolutely the right direction for our graphics project.
 
-Our goal is to explore graphics programming, visual effects, and the challenge of rendering lots of bullets while creating an exciting, chaotic experience.
+## Video Demo
 
-## Demo
+Watch our project in action here:
 
-Watch the project in action in our YouTube video demo:
+[![YouTube Demo Thumbnail](https://img.youtube.com/vi/_Nd2mj_wYao/0.jpg)](https://youtu.be/_Nd2mj_wYao)
 
-**[Watch the Bullet Hell demo on YouTube](YOUR_YOUTUBE_VIDEO_URL)**
-
-Replace `YOUR_YOUTUBE_VIDEO_URL` with the link to the finished video.
+[Watch on YouTube](https://youtu.be/_Nd2mj_wYao)
